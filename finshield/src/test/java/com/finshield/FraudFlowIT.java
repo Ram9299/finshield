@@ -9,6 +9,7 @@ import org.springframework.http.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -28,14 +29,22 @@ class FraudFlowIT {
             .withUsername("postgres")
             .withPassword("postgres");
 
+    @Container
+    static GenericContainer<?> redis = new GenericContainer<>("redis:7")
+            .withExposedPorts(6379);
+
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
+        // Postgres
         r.add("spring.datasource.url", postgres::getJdbcUrl);
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
-
         r.add("spring.flyway.enabled", () -> true);
         r.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+
+        // Redis (Spring Boot uses spring.data.redis.*)
+        r.add("spring.data.redis.host", redis::getHost);
+        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
     }
 
     @Autowired
@@ -45,15 +54,13 @@ class FraudFlowIT {
     void shouldCreateAlertWhenRiskIsBlock() {
         UUID accountId = createUserAndAccount();
 
-        // Build small-amount history (for amount spike rule)
+        // Build some history so AMOUNT_SPIKE can trigger too
         for (int i = 0; i < 6; i++) {
             post("/api/transactions", txn(accountId, bd("1000"), "IN", "device-android-1", "49.204.12.10"));
         }
 
-        // Trigger BLOCK reliably:
-        // - RAPID_TXN: many txns in last minute
-        // - AMOUNT_SPIKE: 100000 vs avg ~1000
-        // - DEVICE_MISMATCH: new device
+        // With Redis enabled, the RAPID_TXN counter will be hot already.
+        // Add a spike + new device to push score >= 70 reliably
         Map<String, Object> spikeResp = post("/api/transactions",
                 txn(accountId, bd("100000"), "IN", "device-unknown-9999", "49.204.12.10"));
 
@@ -71,13 +78,35 @@ class FraudFlowIT {
     void shouldReturnEmptyAlertsWhenNoBlockTransactions() {
         UUID accountId = createUserAndAccount();
 
-        // Only normal transactions, spaced and same device/country, low amounts
-        for (int i = 0; i < 3; i++) {
+        // Only a couple normal txns (avoid rapid threshold)
+        for (int i = 0; i < 2; i++) {
             post("/api/transactions", txn(accountId, bd("500"), "IN", "device-android-1", "49.204.12.10"));
         }
 
         List<?> openAlerts = getList("/api/alerts?status=OPEN");
         assertTrue(openAlerts.isEmpty(), "Expected no OPEN alerts for normal activity");
+    }
+
+    @Test
+    void rapidTxnShouldAppearInRiskSignals_whenManyTxnsInShortWindow() {
+        UUID accountId = createUserAndAccount();
+
+        // Send 6 quick txns to trigger RAPID_TXN via Redis sliding window
+        UUID lastTxnId = null;
+        for (int i = 0; i < 6; i++) {
+            Map<String, Object> resp = post("/api/transactions", txn(accountId, bd("200"), "IN", "device-android-1", "49.204.12.10"));
+            lastTxnId = uuid(resp, "id");
+        }
+        assertNotNull(lastTxnId);
+
+        Map<String, Object> risk = getMap("/api/transactions/" + lastTxnId + "/risk");
+
+        // signals is a List<Map<String,Object>>
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> signals = (List<Map<String, Object>>) risk.getOrDefault("signals", List.of());
+
+        boolean hasRapid = signals.stream().anyMatch(s -> "RAPID_TXN".equals(String.valueOf(s.get("type"))));
+        assertTrue(hasRapid, "Expected RAPID_TXN signal in risk details when many txns occur quickly");
     }
 
     // ---------------- helpers ----------------
