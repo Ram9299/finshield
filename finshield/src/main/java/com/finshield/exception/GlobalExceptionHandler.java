@@ -52,4 +52,16 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.badRequest().body(body);
     }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleAny(Exception ex, HttpServletRequest req) {
+        ApiError body = new ApiError(
+                OffsetDateTime.now(),
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(),
+                ex.getClass().getSimpleName() + ": " + ex.getMessage(),
+                req.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+    }
 }

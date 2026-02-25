@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16
+    container_name: finshield-db
+    environment:
+      POSTGRES_DB: finshield
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    ports:
+      - "5432:5432"
+    volumes:
+      - finshield_pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: finshield-app
+    depends_on:
+      - db
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/finshield
+      DB_USER: postgres
+      DB_PASSWORD: 1234
+    ports:
+      - "8080:8080"
+
+volumes:
+  finshield_pgdata:

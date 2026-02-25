@@ -1,5 +1,6 @@
 package com.finshield.controller;
 
+import com.finshield.dto.AlertItem;
 import com.finshield.entity.enums.AlertStatus;
 import com.finshield.repository.AlertRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,13 +16,23 @@ public class AlertController {
     private final AlertRepository alertRepository;
 
     @GetMapping
-    public List<?> getOpenAlerts(@RequestParam(defaultValue = "OPEN") String status) {
+    public List<AlertItem> getAlerts(@RequestParam(defaultValue = "OPEN") String status) {
         AlertStatus st;
         try {
             st = AlertStatus.valueOf(status.toUpperCase());
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid status. Use OPEN or CLOSED");
         }
-        return alertRepository.findByStatusOrderByCreatedAtDesc(st);
+
+        return alertRepository.findByStatusOrderByCreatedAtDesc(st).stream()
+                .map(a -> new AlertItem(
+                        a.getId(),
+                        a.getAccount().getId(),
+                        a.getTransaction().getId(),
+                        a.getAlertType(),
+                        a.getStatus().name(),
+                        a.getCreatedAt()
+                ))
+                .toList();
     }
 }
