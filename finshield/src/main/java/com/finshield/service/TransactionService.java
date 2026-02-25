@@ -3,20 +3,29 @@ package com.finshield.service;
 import com.finshield.dto.CreateTransactionRequest;
 import com.finshield.dto.CreateTransactionResponse;
 import com.finshield.entity.Account;
+import com.finshield.entity.FraudSignal;
 import com.finshield.entity.Transaction;
+import com.finshield.entity.enums.RiskDecision;
 import com.finshield.entity.enums.TxnType;
+import com.finshield.repository.FraudSignalRepository;
 import com.finshield.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
+    private final FraudSignalRepository fraudSignalRepository;
+
     private final AccountService accountService;
+    private final FraudDetectionService fraudDetectionService;
+    private final RiskScoringService riskScoringService;
+    private final AlertService alertService;
 
     public CreateTransactionResponse create(CreateTransactionRequest req) {
         Account account = accountService.getOrThrow(req.accountId());
@@ -39,18 +48,31 @@ public class TransactionService {
                 .createdAt(OffsetDateTime.now())
                 .build();
 
-        Transaction saved = transactionRepository.save(txn);
+        Transaction savedTxn = transactionRepository.save(txn);
+
+        // Run fraud rules
+        List<FraudSignal> signals = fraudDetectionService.detect(savedTxn);
+        if (!signals.isEmpty()) {
+            fraudSignalRepository.saveAll(signals);
+        }
+
+        int totalScore = signals.stream().mapToInt(FraudSignal::getRiskWeight).sum();
+        var savedRisk = riskScoringService.saveScore(savedTxn, totalScore);
+
+        if (savedRisk.getDecision() == RiskDecision.BLOCK) {
+            alertService.triggerFraudAlert(savedTxn);
+        }
 
         return new CreateTransactionResponse(
-                saved.getId(),
-                saved.getAccount().getId(),
-                saved.getAmount(),
-                saved.getCurrency(),
-                saved.getTxnType().name(),
-                saved.getCountry(),
-                saved.getDeviceId(),
-                saved.getIpAddress(),
-                saved.getCreatedAt()
+                savedTxn.getId(),
+                savedTxn.getAccount().getId(),
+                savedTxn.getAmount(),
+                savedTxn.getCurrency(),
+                savedTxn.getTxnType().name(),
+                savedTxn.getCountry(),
+                savedTxn.getDeviceId(),
+                savedTxn.getIpAddress(),
+                savedTxn.getCreatedAt()
         );
     }
 }
