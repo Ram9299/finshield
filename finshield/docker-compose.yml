@@ -11,6 +11,13 @@ services:
     volumes:
       - finshield_pgdata:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7
+    container_name: finshield-redis
+    ports:
+      - "6379:6379"
+
+
   app:
     build: .
     container_name: finshield-app
