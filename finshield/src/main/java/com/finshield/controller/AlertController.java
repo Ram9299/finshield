@@ -1,12 +1,15 @@
 package com.finshield.controller;
 
 import com.finshield.dto.AlertItem;
+import com.finshield.entity.Alert;
 import com.finshield.entity.enums.AlertStatus;
+import com.finshield.exception.NotFoundException;
 import com.finshield.repository.AlertRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
@@ -34,5 +37,17 @@ public class AlertController {
                         a.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    @PostMapping("/{id}/close")
+    public String close(@PathVariable UUID id) {
+
+        Alert alert = alertRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Alert not found: " + id));
+
+        alert.setStatus(AlertStatus.CLOSED);
+        alertRepository.save(alert);
+
+        return "Alert closed successfully";
     }
 }

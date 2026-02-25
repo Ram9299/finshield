@@ -1,11 +1,16 @@
 package com.finshield.repository;
 
 import com.finshield.entity.Alert;
+import com.finshield.entity.enums.AlertStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AlertRepository extends JpaRepository<Alert, UUID> {
-    List<Alert> findByStatusOrderByCreatedAtDesc(com.finshield.entity.enums.AlertStatus status);
+
+    List<Alert> findByStatusOrderByCreatedAtDesc(AlertStatus status);
+
+    Optional<Alert> findById(UUID id);
 }
