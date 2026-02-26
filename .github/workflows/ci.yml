@@ -28,14 +28,17 @@ jobs:
       - name: Docker info
         run: docker version
 
-      - name: Run tests + quality checks
-        run: mvn -B -e verify
+      - name: Run tests
+        run: mvn -B -e test
 
       - name: Upload JaCoCo HTML report
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
           path: finshield/target/site/jacoco
+
+      - name: Run tests + quality checks
+        run: mvn -B -e verify
 
       - name: Build jar
         run: mvn -B -DskipTests package
