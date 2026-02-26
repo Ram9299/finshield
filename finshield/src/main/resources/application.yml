@@ -36,9 +36,30 @@ finshield:
     topic:
       txn-created: txn.created.v1s
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  health:
+    readinessstate:
+      enabled: true
+    livenessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: finshield
+
 logging:
   level:
     org.hibernate.SQL: debug
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{corrId}] %logger{36} - %msg%n"
 
 springdoc:
   swagger-ui:

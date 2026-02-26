@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: finshield
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
+      POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
@@ -27,8 +27,15 @@ services:
       DB_USER: postgres
       DB_PASSWORD: 1234
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "8080:8080"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health/readiness" ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
