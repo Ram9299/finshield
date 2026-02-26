@@ -37,8 +37,5 @@ jobs:
           name: jacoco-report
           path: finshield/target/site/jacoco
 
-      - name: Run tests + quality checks
-        run: mvn -B -e verify
-
       - name: Build jar
         run: mvn -B -DskipTests package
