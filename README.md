@@ -1,0 +1,1 @@
+![CI](https://github.com/Ram9299/finshield/actions/workflows/ci.yml/badge.svg)
