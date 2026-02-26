@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @SpringBootApplication
 public class FinshieldApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(FinshieldApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(FinshieldApplication.class, args);
+  }
 }

@@ -13,11 +13,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/users")
 public class UserController {
 
-    private final UserService userService;
+  private final UserService userService;
 
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public CreateUserResponse create(@Valid @RequestBody CreateUserRequest req) {
-        return userService.create(req);
-    }
+  @PostMapping
+  @ResponseStatus(HttpStatus.CREATED)
+  public CreateUserResponse create(@Valid @RequestBody CreateUserRequest req) {
+    return userService.create(req);
+  }
 }

@@ -7,11 +7,13 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class OpenApiConfig {
-    @Bean
-    public OpenAPI finshieldOpenAPI() {
-        return new OpenAPI().info(new Info()
+  @Bean
+  public OpenAPI finshieldOpenAPI() {
+    return new OpenAPI()
+        .info(
+            new Info()
                 .title("FinShield – Fraud Pattern Simulator API")
                 .version("1.0")
                 .description("Transaction simulation + fraud rules + risk scoring + alerts"));
-    }
+  }
 }
