@@ -124,24 +124,24 @@
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.12</version>
                 <executions>
-                    <!-- Attaches JaCoCo agent to tests -->
+
+                    <!-- Attach agent -->
                     <execution>
-                        <id>prepare-agent</id>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
                     </execution>
 
-                    <!-- Generates coverage report after tests -->
+                    <!-- Generate report -->
                     <execution>
                         <id>report</id>
-                        <phase>test</phase>
+                        <phase>verify</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
                     </execution>
 
-                    <!-- Quality gate: fail build if coverage below limits -->
+                    <!-- Coverage gate -->
                     <execution>
                         <id>check</id>
                         <goals>
@@ -152,7 +152,6 @@
                                 <rule>
                                     <element>BUNDLE</element>
                                     <limits>
-                                        <!-- Start lenient; increase later -->
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
@@ -163,6 +162,7 @@
                             </rules>
                         </configuration>
                     </execution>
+
                 </executions>
             </plugin>
 
