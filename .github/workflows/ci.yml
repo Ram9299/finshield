@@ -10,6 +10,10 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: finshield   # ✅ this is the inner folder that has pom.xml
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,14 +25,11 @@ jobs:
           java-version: "17"
           cache: maven
 
-      # Optional: sanity check Docker (Testcontainers needs Docker)
       - name: Docker info
         run: docker version
 
       - name: Run tests
-        working-directory: finshield/finshield
         run: mvn -B test
 
       - name: Build jar
-        working-directory: finshield/finshield
         run: mvn -B -DskipTests package
