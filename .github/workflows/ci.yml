@@ -31,5 +31,11 @@ jobs:
       - name: Run tests
         run: mvn -B -e test
 
+      - name: Upload JaCoCo HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: finshield/target/site/jacoco
+
       - name: Build jar
         run: mvn -B -DskipTests package
