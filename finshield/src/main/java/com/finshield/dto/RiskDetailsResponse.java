@@ -4,6 +4,11 @@ import java.util.List;
 import java.util.UUID;
 
 public record RiskDetailsResponse(
-    UUID transactionId, int totalScore, String decision, List<SignalItem> signals) {
-  public record SignalItem(String type, int weight, String details) {}
+    UUID transactionId,
+    String status, // PENDING or READY
+    Integer totalScore,
+    String decision,
+    List<SignalItem> signals) {
+
+  public record SignalItem(String type, int riskWeight, String details) {}
 }

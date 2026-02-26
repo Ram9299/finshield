@@ -2,9 +2,10 @@ package com.finshield.service;
 
 import com.finshield.dto.RiskDetailsResponse;
 import com.finshield.entity.RiskScore;
-import com.finshield.exception.NotFoundException;
 import com.finshield.repository.FraudSignalRepository;
 import com.finshield.repository.RiskScoreRepository;
+import com.finshield.repository.TransactionRepository;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -13,18 +14,25 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RiskQueryService {
 
+  private final TransactionRepository transactionRepository;
   private final RiskScoreRepository riskScoreRepository;
   private final FraudSignalRepository fraudSignalRepository;
 
-  public RiskDetailsResponse getRisk(UUID transactionId) {
-    RiskScore rs =
-        riskScoreRepository
-            .findByTransaction_Id(transactionId)
-            .orElseThrow(
-                () -> new NotFoundException("Risk score not found for txn: " + transactionId));
+  public RiskDetailsResponse get(UUID txnId) {
+
+    // ensure transaction exists
+    transactionRepository
+        .findById(txnId)
+        .orElseThrow(() -> new IllegalArgumentException("Transaction not found: " + txnId));
+
+    RiskScore risk = riskScoreRepository.findByTransaction_Id(txnId).orElse(null);
+
+    if (risk == null) {
+      return new RiskDetailsResponse(txnId, "PENDING", null, null, List.of());
+    }
 
     var signals =
-        fraudSignalRepository.findByTransaction_Id(transactionId).stream()
+        fraudSignalRepository.findByTransaction_Id(txnId).stream()
             .map(
                 s ->
                     new RiskDetailsResponse.SignalItem(
@@ -32,6 +40,6 @@ public class RiskQueryService {
             .toList();
 
     return new RiskDetailsResponse(
-        transactionId, rs.getTotalScore(), rs.getDecision().name(), signals);
+        txnId, "READY", risk.getTotalScore(), risk.getDecision().name(), signals);
   }
 }

@@ -30,8 +30,8 @@ public class TransactionController {
   }
 
   @GetMapping("/{id}/risk")
-  public RiskDetailsResponse risk(@PathVariable("id") UUID txnId) {
-    return riskQueryService.getRisk(txnId);
+  public RiskDetailsResponse getRisk(@PathVariable UUID id) {
+    return riskQueryService.get(id);
   }
 
   @GetMapping("/recent")

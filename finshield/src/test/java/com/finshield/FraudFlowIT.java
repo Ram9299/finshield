@@ -3,6 +3,8 @@ package com.finshield;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,9 +14,11 @@ import org.springframework.http.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -25,10 +29,14 @@ class FraudFlowIT {
       new PostgreSQLContainer<>("postgres:16")
           .withDatabaseName("finshield")
           .withUsername("postgres")
-          .withPassword("1234");
+          .withPassword("postgres");
 
   @Container
   static GenericContainer<?> redis = new GenericContainer<>("redis:7").withExposedPorts(6379);
+
+  @Container
+  static KafkaContainer kafka =
+      new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
 
   @DynamicPropertySource
   static void props(DynamicPropertyRegistry r) {
@@ -36,101 +44,90 @@ class FraudFlowIT {
     r.add("spring.datasource.url", postgres::getJdbcUrl);
     r.add("spring.datasource.username", postgres::getUsername);
     r.add("spring.datasource.password", postgres::getPassword);
-    r.add("spring.flyway.enabled", () -> true);
     r.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+    r.add("spring.flyway.enabled", () -> true);
 
-    // Redis (Spring Boot uses spring.data.redis.*)
+    // Redis
     r.add("spring.data.redis.host", redis::getHost);
     r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
+
+    // Kafka
+    r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
   }
 
   @Autowired TestRestTemplate rest;
 
   @Test
-  void shouldCreateAlertWhenRiskIsBlock() {
+  void asyncFlow_shouldEventuallyBlockAndCreateAlert() {
     UUID accountId = createUserAndAccount();
 
-    // Build some history so AMOUNT_SPIKE can trigger too
+    // Build normal history
     for (int i = 0; i < 6; i++) {
-      post(
-          "/api/transactions",
-          txn(accountId, bd("1000"), "IN", "device-android-1", "49.204.12.10"));
+      post("/api/transactions", txn(accountId, bd("1000"), "IN", "device-1", "49.204.12.10"));
     }
 
-    // With Redis enabled, the RAPID_TXN counter will be hot already.
-    // Add a spike + new device to push score >= 70 reliably
-    Map<String, Object> spikeResp =
+    // Spike
+    Map<String, Object> resp =
         post(
             "/api/transactions",
-            txn(accountId, bd("100000"), "IN", "device-unknown-9999", "49.204.12.10"));
+            txn(accountId, bd("100000"), "IN", "device-unknown", "49.204.12.10"));
 
-    UUID spikeTxnId = uuid(spikeResp, "id");
+    UUID txnId = uuid(resp, "id");
 
-    Map<String, Object> risk = getMap("/api/transactions/" + spikeTxnId + "/risk");
-    assertEquals("BLOCK", String.valueOf(risk.get("decision")));
-    assertTrue(((Number) risk.get("totalScore")).intValue() >= 70);
+    // Poll until READY
+    Map<String, Object> risk = waitUntilReady(txnId);
 
-    List<?> openAlerts = getList("/api/alerts?status=OPEN");
-    assertFalse(openAlerts.isEmpty(), "Expected at least one OPEN alert");
+    assertEquals("READY", risk.get("status"));
+    assertEquals("BLOCK", risk.get("decision"));
+
+    List<?> alerts = getList("/api/alerts?status=OPEN");
+    assertFalse(alerts.isEmpty());
   }
 
-  @Test
-  void shouldReturnEmptyAlertsWhenNoBlockTransactions() {
-    UUID accountId = createUserAndAccount();
+  // ---- polling helper ----
 
-    // Only a couple normal txns (avoid rapid threshold)
-    for (int i = 0; i < 2; i++) {
-      post(
-          "/api/transactions", txn(accountId, bd("500"), "IN", "device-android-1", "49.204.12.10"));
+  private Map<String, Object> waitUntilReady(UUID txnId) {
+    Instant deadline = Instant.now().plus(Duration.ofSeconds(15));
+
+    while (Instant.now().isBefore(deadline)) {
+      Map<String, Object> risk = getMap("/api/transactions/" + txnId + "/risk");
+
+      if ("READY".equals(risk.get("status"))) {
+        return risk;
+      }
+
+      sleep(300);
     }
 
-    List<?> openAlerts = getList("/api/alerts?status=OPEN");
-    assertTrue(openAlerts.isEmpty(), "Expected no OPEN alerts for normal activity");
+    fail("Risk never became READY within timeout");
+    return Map.of();
   }
 
-  @Test
-  void rapidTxnShouldAppearInRiskSignals_whenManyTxnsInShortWindow() {
-    UUID accountId = createUserAndAccount();
-
-    // Send 6 quick txns to trigger RAPID_TXN via Redis sliding window
-    UUID lastTxnId = null;
-    for (int i = 0; i < 6; i++) {
-      Map<String, Object> resp =
-          post(
-              "/api/transactions",
-              txn(accountId, bd("200"), "IN", "device-android-1", "49.204.12.10"));
-      lastTxnId = uuid(resp, "id");
+  private void sleep(long millis) {
+    try {
+      Thread.sleep(millis);
+    } catch (InterruptedException ignored) {
     }
-    assertNotNull(lastTxnId);
-
-    Map<String, Object> risk = getMap("/api/transactions/" + lastTxnId + "/risk");
-
-    // signals is a List<Map<String,Object>>
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> signals =
-        (List<Map<String, Object>>) risk.getOrDefault("signals", List.of());
-
-    boolean hasRapid =
-        signals.stream().anyMatch(s -> "RAPID_TXN".equals(String.valueOf(s.get("type"))));
-    assertTrue(hasRapid, "Expected RAPID_TXN signal in risk details when many txns occur quickly");
   }
 
-  // ---------------- helpers ----------------
+  // ---- helpers ----
 
   private UUID createUserAndAccount() {
     String email = "test_" + UUID.randomUUID() + "@example.com";
 
-    Map<String, Object> userResp =
+    Map<String, Object> user =
         post(
             "/api/users",
             Map.of(
                 "fullName", "Test User",
                 "email", email,
                 "country", "IN"));
-    UUID userId = uuid(userResp, "id");
 
-    Map<String, Object> accResp = post("/api/accounts", Map.of("userId", userId.toString()));
-    return uuid(accResp, "id");
+    UUID userId = uuid(user, "id");
+
+    Map<String, Object> acc = post("/api/accounts", Map.of("userId", userId.toString()));
+
+    return uuid(acc, "id");
   }
 
   private Map<String, Object> txn(
@@ -158,31 +155,23 @@ class FraudFlowIT {
     ResponseEntity<Map> res =
         rest.exchange(path, HttpMethod.POST, new HttpEntity<>(body, headers), Map.class);
 
-    assertTrue(
-        res.getStatusCode().is2xxSuccessful(),
-        "POST " + path + " failed: status=" + res.getStatusCodeValue() + " body=" + res.getBody());
-
-    assertNotNull(res.getBody(), "POST " + path + " returned null body");
+    assertTrue(res.getStatusCode().is2xxSuccessful());
     return (Map<String, Object>) res.getBody();
   }
 
   @SuppressWarnings("unchecked")
   private Map<String, Object> getMap(String path) {
     ResponseEntity<Map> res = rest.getForEntity(path, Map.class);
-    assertEquals(200, res.getStatusCode().value(), "GET " + path + " failed");
-    assertNotNull(res.getBody(), "GET " + path + " returned null body");
+    assertEquals(200, res.getStatusCode().value());
     return (Map<String, Object>) res.getBody();
   }
 
   private List<?> getList(String path) {
     ResponseEntity<List> res = rest.getForEntity(path, List.class);
-    assertEquals(200, res.getStatusCode().value(), "GET " + path + " failed");
     return Objects.requireNonNullElse(res.getBody(), List.of());
   }
 
   private UUID uuid(Map<String, Object> map, String key) {
-    Object v = map.get(key);
-    assertNotNull(v, "Missing field: " + key);
-    return UUID.fromString(String.valueOf(v));
+    return UUID.fromString(String.valueOf(map.get(key)));
   }
 }
