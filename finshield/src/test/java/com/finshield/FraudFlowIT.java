@@ -27,7 +27,7 @@ class FraudFlowIT {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16")
             .withDatabaseName("finshield")
             .withUsername("postgres")
-            .withPassword("postgres");
+            .withPassword("1234");
 
     @Container
     static GenericContainer<?> redis = new GenericContainer<>("redis:7")
