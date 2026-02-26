@@ -28,8 +28,8 @@ jobs:
       - name: Docker info
         run: docker version
 
-      - name: Run tests
-        run: mvn -B -e test
+      - name: Run tests + quality checks
+        run: mvn -B -e verify
 
       - name: Upload JaCoCo HTML report
         uses: actions/upload-artifact@v4
